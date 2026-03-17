@@ -81,4 +81,25 @@ Downstream objects exist in two parallel branches:
 |------|-------------|
 | `ITS_pcr_metadata.csv` | PCR-expanded metadata — one row per PCR replicate (528 rows, `nopool` with-soil; covers all datasets) |
 
+Key ID fields in `ITS_pcr_metadata.csv` (used in `4_data_prep.R`):
+
+- `pcr_sample_id`: unique PCR replicate ID (e.g., `S_1_1_P3r1`)
+- `root_id`: parent root sample ID (e.g., `S_1_1_P3`)
+- `pcr_rep_num`: PCR replicate number (`1..4`)
+- `replicate_ID`: biological root replicate tracking (e.g., `BEL_2_1_a`)
+- `root_rep_label` / `root_rep_num`: root replicate identity when available (`a/b` and `1/2`)
+
+Notes:
+
+- `sample` is equivalent to `root_id`.
+- The first unnamed CSV column is the row name and is equivalent to `pcr_sample_id`.
+
+### PlutoF Files (per DADA2 strategy)
+
+To avoid OTU namespace collisions between pooling strategies, PlutoF is run separately per strategy in `4_data_prep.R`.
+
+- `nopool` -> `matches_out_taxonomy_nopool.csv`
+- `pool` -> `matches_out_taxonomy_pool.csv`
+- `pspool` -> `matches_out_taxonomy_pspool.csv`
+
 
