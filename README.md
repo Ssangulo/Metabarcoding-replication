@@ -1,7 +1,5 @@
 # ITS Metabarcoding Pipeline — Replication Repository
 
-Reproducible bioinformatics pipeline for ITS2 amplicon metabarcoding of ectomycorrhizal root-tip communities along elevational gradients in the Ecuadorian Andes. Accompanies the replication/methods paper.
-
 ---
 
 ## Experimental Design
