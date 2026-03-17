@@ -159,10 +159,11 @@ export_top100_fasta <- function(ps, object_label, n_top=100, out_dir=".") {
 top100_export_report <- dplyr::bind_rows(Map(export_top100_fasta, alldat.S, names(alldat.S)))
 cat("PlutoF export files generated (with-soil objects):\n")
 print(top100_export_report)
-cat("Run PlutoF separately for each FASTA and save outputs using EXACT names:\n")
-cat("  nopool -> matches_out_taxonomy_nopool.csv\n")
-cat("  pool   -> matches_out_taxonomy_pool.csv\n")
-cat("  pspool -> matches_out_taxonomy_pspool.csv\n")
+
+#Run PlutoF separately for each FASTA and save outputs using EXACT names:
+#nopool -> matches_out_taxonomy_nopool.csv
+#pool   -> matches_out_taxonomy_pool.csv
+#pspool -> matches_out_taxonomy_pspool.csv
 
 # ---- 3B) Read PlutoF CSV per strategy and classify non-fungal OTUs ---------
 # Explicit one-to-one mapping: strategy name -> PlutoF CSV file name
@@ -274,9 +275,6 @@ alldat.N <- setNames(lapply(names(alldat.N), function(nm) {
   remove_nonfungal(alldat.N[[nm]], nonfungal_ids_by_strategy[[nm]])
 }), names(alldat.N))
 
-# Keep legacy list names for downstream compatibility
-alldat <- alldat.S
-alldat.root <- alldat.N
 
 # Refresh explicit object names for downstream script sections
 fullps_nopool_withsoil <- alldat.S$nopool
@@ -285,6 +283,26 @@ fullps_pspool_withsoil <- alldat.S$pspool
 fullps_nopool          <- alldat.N$nopool
 fullps_pool            <- alldat.N$pool
 fullps_pspool          <- alldat.N$pspool
+
+#SAVE FINAL PHYLOSEQ OBJECTS PRE-RAREFACTION FOR MONTE-CARLO
+saveRDS(fullps_nopool_withsoil, "fullps_nopool_withsoil.rds")
+saveRDS(fullps_pool_withsoil,   "fullps_pool_withsoil.rds")
+saveRDS(fullps_pspool_withsoil, "fullps_pspool_withsoil.rds")
+saveRDS(fullps_nopool,          "fullps_nopool.rds")
+saveRDS(fullps_pool,            "fullps_pool.rds") 
+saveRDS(fullps_pspool,          "fullps_pspool.rds")
+
+
+
+
+######### REST OF THE CODE TO BE CONTINUED AFTER MONTE CARLO.... STOP HERE
+########################
+# =============================================================================
+# =============================================================================
+
+
+
+
 
 # =============================================================================
 # SECTION 4 — RAREFACTION CURVE AND LIBRARY DEPTH CHECKS
