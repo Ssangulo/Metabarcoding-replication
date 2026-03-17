@@ -125,4 +125,43 @@ saveRDS(rg2.nopoolps.noSoil, "rg2.nopoolps.noSoil.rds");  saveRDS(rg2.poolps.noS
 saveRDS(rg3.nopoolps.noSoil, "rg3.nopoolps.noSoil.rds");  saveRDS(rg3.poolps.noSoil, "rg3.poolps.noSoil.rds");  saveRDS(rg3.pspoolps.noSoil, "rg3.pspoolps.noSoil.rds")
 saveRDS(rg4.nopoolps.noSoil, "rg4.nopoolps.noSoil.rds");  saveRDS(rg4.poolps.noSoil, "rg4.poolps.noSoil.rds");  saveRDS(rg4.pspoolps.noSoil, "rg4.pspoolps.noSoil.rds")
 
+# =============================================================================
+# SECTION 3b — ATTACH TAXONOMY TO FULL-COMPLEXITY PHYLOSEQ OBJECTS
+#
+# The full-complexity phyloseq objects (fullps_nopool/pool/pspool) were built
+# in 2_DADA2_lulu.R Section 5b with rows = individual PCR replicates.
+# Here we attach the SAME tax_table from UNITE to these objects to ensure
+# full consistency with the main study.
+#
+# Why reuse instead of re-annotating?
+# ------------------------------------
+# This replication paper must use identical taxonomy to allow direct comparison.
+# The tax_table rows are OTU IDs (OTU1, OTU2 ...) which match the column names
+# in the full-complexity OTU table — so the same table can be attached directly.
+# =============================================================================
+
+fullps_nopool  <- readRDS("fullps_nopool.rds")
+fullps_pool    <- readRDS("fullps_pool.rds")
+fullps_pspool  <- readRDS("fullps_pspool.rds")
+
+# Confirm OTU ID alignment before attaching
+stopifnot(all(taxa_names(fullps_nopool)  %in% rownames(tax_table_nopoolps)))
+stopifnot(all(taxa_names(fullps_pool)    %in% rownames(tax_table_poolps)))
+stopifnot(all(taxa_names(fullps_pspool)  %in% rownames(tax_table_pspoolps)))
+
+tax_table(fullps_nopool)  <- tax_table_nopoolps[taxa_names(fullps_nopool),  ]
+tax_table(fullps_pool)    <- tax_table_poolps[taxa_names(fullps_pool),      ]
+tax_table(fullps_pspool)  <- tax_table_pspoolps[taxa_names(fullps_pspool),  ]
+
+# Quick check
+cat("Full-complexity phyloseq (nopool): ",
+    nsamples(fullps_nopool), "PCR samples, ",
+    ntaxa(fullps_nopool),    "OTUs, taxonomy attached:", !is.null(tax_table(fullps_nopool, errorIfNULL=FALSE)), "\n")
+
+saveRDS(fullps_nopool,  "fullps_nopool.rds")   # overwrites version without taxonomy
+saveRDS(fullps_pool,    "fullps_pool.rds")
+saveRDS(fullps_pspool,  "fullps_pspool.rds")
+
 # Next step: 4_data_prep.R
+# For the replication paper: proceed to Monte_Carlo.R using fullps_nopool (or
+# fullps_pool / fullps_pspool) as the input object.

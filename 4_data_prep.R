@@ -79,28 +79,28 @@ alldat.N
 # SECTION 3 — REMOVE NON-FUNGAL (HOST) OTUs
 # During sanity checks (% reads assigned, % OTUs assigned, top-OTU inspection)
 # it was noticed that the top 5 most abundant OTUs lacked taxonomy beyond
-# Kingdom Fungi in UNITE. Sequences of the top 30 OTUs were exported and
+# Kingdom Fungi in UNITE. Sequences of the top 100 OTUs were exported and
 # submitted to PlutoF SH matching v2.0.0, which identified 6 of them as
 # Ericaceae host plant DNA.
 # These 6 OTUs accounted for ~60% of all reads in alldat.N[[2]].
 # =============================================================================
 
-# ---- Check top 30 OTUs and export for PlutoF SH matching -------------------
+# ---- Check top 100 OTUs and export for PlutoF SH matching -------------------
 ps_check <- alldat.N[[2]]
 otu_mat  <- as(otu_table(ps_check), "matrix")
 if (!taxa_are_rows(ps_check)) otu_mat <- t(otu_mat)
 
-top30_otus <- data.frame(
+top100_otus <- data.frame(
   OTU_ID      = names(rowSums(otu_mat)),
   total_reads = rowSums(otu_mat)
 ) |>
   dplyr::arrange(desc(total_reads)) |>
-  dplyr::slice(1:30)
-print(top30_otus)
+  dplyr::slice(1:100)
+print(top100_otus)
 
 # Export FASTA for PlutoF submission (https://plutof.ut.ee → SH matching v2.0.0)
-top30_seqs <- refseq(ps_check)[top30_otus$OTU_ID]
-writeXStringSet(top30_seqs, filepath="top30_OTUs_refseqs.fasta", format="fasta")
+top100_seqs <- refseq(ps_check)[top100_otus$OTU_ID]
+writeXStringSet(top100_seqs, filepath="top100_OTUs_refseqs.fasta", format="fasta")
 
 # ---- Quantify contamination -------------------------------------------------
 # PlutoF result: the 6 OTUs below are Ericaceae host sequences
@@ -139,7 +139,6 @@ sapply(alldat.N, function(ps) min(rowSums(otu_table(ps))))
 
 # =============================================================================
 # SECTION 5 — REMOVE LOW-DEPTH SAMPLES (< 10,000 reads)
-# Applied uniformly to all lists and all replicate-group indices.
 # =============================================================================
 
 min_depth <- 10000
@@ -267,18 +266,6 @@ ps_fungi <- alldat.N[[2]]   # main analysis object (rg2, no-soil roots)
 balanced_ps <- subset_samples(individual_ps, site %in% c("DOM","NV"))
 balanced_ps <- subset_samples(balanced_ps, !(site_elevation == "NV_4"))
 balanced_ps <- prune_taxa(taxa_sums(balanced_ps) > 0, balanced_ps)
-
-# =============================================================================
-# SECTION 10 — SAVE WORKSPACE
-# =============================================================================
-
-# Pre-computed distances (Aitchison) for downstream use
-dists <- vegan::vegdist(otu_table(balanced_ps), binary=FALSE, method="robust.aitchison")
-
-saveRDS(ps_fungi,      "/data/lastexpansion/danieang/objects/phyloseq_main_rg2_nosoil.rds")
-saveRDS(individual_ps, "/data/lastexpansion/danieang/objects/ps_individual.rds")
-saveRDS(balanced_ps,   "/data/lastexpansion/danieang/objects/ps_balanced_permanova.rds")
-saveRDS(dists,         "/data/lastexpansion/danieang/objects/dist_ait.rds")
 
 save.image(file="eco_analysis.RData")
 # load("eco_analysis.RData")

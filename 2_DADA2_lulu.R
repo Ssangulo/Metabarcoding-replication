@@ -371,12 +371,17 @@ save.image(file="merged_ITS.RData")
 exdata <- read.csv("ITS_metadata_with_habitat.csv")
 
 # ---- 4 Remove PCR blanks (NTCs) ------------------------------------------
-ntc.to.blankcontrol <-  function (x){
-  z <- x
-  sample.info.nopool <- dplyr::bind_rows(nopool.lulu.index, .id = "column_label")
-  row.names(sample.info.nopool) = sample.info.nopool$full
-  z = merge(nopool.lulu.ntc, sample.info.nopool, by =  'row.names', all.x=TRUE)
-  z = merge(z, exdata, by.x="sample", by.y="sample", all.x=TRUE)
+build_sample_info <- function(index_df) {
+  sample.info <- as.data.frame(index_df)
+  row.names(sample.info) <- sample.info$full
+  sample.info
+}
+
+ntc.to.blankcontrol <-  function(ntc_mat, sample_index, exdata_df){
+  z <- ntc_mat
+  sample.info <- build_sample_info(sample_index)
+  z = merge(z, sample.info, by =  'row.names', all.x=TRUE)
+  z = merge(z, exdata_df, by.x="sample", by.y="sample", all.x=TRUE)
   rownames(z) <- z$Row.names 
   z = split(z, z$extract_blank)
   dropnames <- colnames(z[[2]][, c(which(nchar(colnames(z[[2]]))< 30))])
@@ -385,9 +390,9 @@ ntc.to.blankcontrol <-  function (x){
   return(z)
 }
 
-nopool.lulu.ntc.blankC <- ntc.to.blankcontrol(nopool.lulu.ntc)
-pool.lulu.ntc.blankC <- ntc.to.blankcontrol(pool.lulu.ntc)
-pspool.lulu.ntc.blankC <- ntc.to.blankcontrol(pspool.lulu.ntc)
+nopool.lulu.ntc.blankC <- ntc.to.blankcontrol(nopool.lulu.ntc, nopool.lulu.index, exdata)
+pool.lulu.ntc.blankC <- ntc.to.blankcontrol(pool.lulu.ntc, pool.lulu.index, exdata)
+pspool.lulu.ntc.blankC <- ntc.to.blankcontrol(pspool.lulu.ntc, pspool.lulu.index, exdata)
 
 ## getting rid of experimental controls with no blank samples
 nopool.lulu.ntc.blankC1 <- nopool.lulu.ntc.blankC[-1]
@@ -426,14 +431,13 @@ pspool.lulu.ntc.blank.fieldb <- dplyr::bind_rows(pspool.lulu.ntc.blankC2, .id = 
 
 
 ## function to group samples into lists via field blanks
-#Modify "sample.info.nopool" and "nopool.lulu.index" for each dataset!!
+# Uses dataset-specific sample index and NTC table (nopool/pool/pspool)
 
-exblank.to.fieldblankcontrol <-  function (x){
-  z <- x
-  sample.info.nopool <- dplyr::bind_rows(nopool.lulu.index, .id = "column_label")
-  row.names(sample.info.nopool) = sample.info.nopool$full
-  z = merge(nopool.lulu.ntc, sample.info.nopool , by =  'row.names', all.x=TRUE)
-  z = merge(z, exdata, by.x="sample", by.y="sample", all.x=TRUE)
+exblank.to.fieldblankcontrol <-  function(ntc_mat, sample_index, exdata_df){
+  z <- ntc_mat
+  sample.info <- build_sample_info(sample_index)
+  z = merge(z, sample.info , by =  'row.names', all.x=TRUE)
+  z = merge(z, exdata_df, by.x="sample", by.y="sample", all.x=TRUE)
   rownames(z) <- z$Row.names 
   z = split(z, z$Fieldcontrol)
   dropnames <- colnames(z[[2]][, c(which(nchar(colnames(z[[2]]))< 30))])
@@ -443,9 +447,10 @@ exblank.to.fieldblankcontrol <-  function (x){
 }
 
 
-nopool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(nopool.lulu.ntc.blank.fieldb)
-pool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(pool.lulu.ntc.blank.fieldb)
-pspool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(pspool.lulu.ntc.blank.fieldb)
+nopool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(nopool.lulu.ntc, nopool.lulu.index, exdata)
+
+pool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(pool.lulu.ntc, pool.lulu.index, exdata)
+pspool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(pspool.lulu.ntc, pspool.lulu.index, exdata)
 
 
 ## getting rid non-samples experimental controls with no blank samples ->  eliminate blank extraction controls
@@ -453,6 +458,11 @@ pspool.lulu.ntc.blank.fieldblist <- exblank.to.fieldblankcontrol(pspool.lulu.ntc
 nopool.lulu.ntc.blank.fieldblist <- nopool.lulu.ntc.blank.fieldblist[-1]
 pool.lulu.ntc.blank.fieldblist <- pool.lulu.ntc.blank.fieldblist[-1]
 pspool.lulu.ntc.blank.fieldblist <- pspool.lulu.ntc.blank.fieldblist[-1]
+
+# Branch A (with-soil): keep soil-control signal and keep soil samples untouched
+nopool.lulu.ntc.blank.fieldblist.withsoil <- nopool.lulu.ntc.blank.fieldblist
+pool.lulu.ntc.blank.fieldblist.withsoil <- pool.lulu.ntc.blank.fieldblist
+pspool.lulu.ntc.blank.fieldblist.withsoil <- pspool.lulu.ntc.blank.fieldblist
 
 unique(exdata$Fieldcontrol) # copy in blank extract names
 
@@ -467,38 +477,44 @@ fb.blank.change <- function(x){
   return(x1)
 }
 
-nopool.lulu.ntc.blank.fieldblist1 <- lapply(nopool.lulu.ntc.blank.fieldblist, fb.blank.change)
-pool.lulu.ntc.blank.fieldblist1 <- lapply(pool.lulu.ntc.blank.fieldblist, fb.blank.change)
-pspool.lulu.ntc.blank.fieldblist1 <- lapply(pspool.lulu.ntc.blank.fieldblist, fb.blank.change)
+# Branch B (no-soil): subtract soil-control OTU signal
+nopool.lulu.ntc.blank.fieldblist.nosoil <- lapply(nopool.lulu.ntc.blank.fieldblist, fb.blank.change)
+pool.lulu.ntc.blank.fieldblist.nosoil <- lapply(pool.lulu.ntc.blank.fieldblist, fb.blank.change)
+pspool.lulu.ntc.blank.fieldblist.nosoil <- lapply(pspool.lulu.ntc.blank.fieldblist, fb.blank.change)
 
-nopool.lulu.ntc.blank.fieldblist1 <- lapply(nopool.lulu.ntc.blank.fieldblist1,function(x) replace(x, !is.finite(x), 0))
-pool.lulu.ntc.blank.fieldblist1 <- lapply(pool.lulu.ntc.blank.fieldblist1, function(x) replace(x, !is.finite(x), 0))
-pspool.lulu.ntc.blank.fieldblist1 <- lapply(pspool.lulu.ntc.blank.fieldblist1, function(x) replace(x, !is.finite(x), 0))
+nopool.lulu.ntc.blank.fieldblist.nosoil <- lapply(nopool.lulu.ntc.blank.fieldblist.nosoil,function(x) replace(x, !is.finite(x), 0))
+pool.lulu.ntc.blank.fieldblist.nosoil <- lapply(pool.lulu.ntc.blank.fieldblist.nosoil, function(x) replace(x, !is.finite(x), 0))
+pspool.lulu.ntc.blank.fieldblist.nosoil <- lapply(pspool.lulu.ntc.blank.fieldblist.nosoil, function(x) replace(x, !is.finite(x), 0))
 
 
 ## Merging data back to just biological samples
 ##### The same can occur for field blanks - merging dataset again
-nopool.lulu.ntc.blank.fieldblist1 <- lapply(nopool.lulu.ntc.blank.fieldblist1,function(x) as.data.frame(x))
-pool.lulu.ntc.blank.fieldblist1 <- lapply(pool.lulu.ntc.blank.fieldblist1,function(x) as.data.frame(x))
-pspool.lulu.ntc.blank.fieldblist1 <- lapply(pspool.lulu.ntc.blank.fieldblist1,function(x) as.data.frame(x))
+nopool.lulu.ntc.blank.fieldblist.withsoil <- lapply(nopool.lulu.ntc.blank.fieldblist.withsoil,function(x) as.data.frame(x))
+pool.lulu.ntc.blank.fieldblist.withsoil <- lapply(pool.lulu.ntc.blank.fieldblist.withsoil,function(x) as.data.frame(x))
+pspool.lulu.ntc.blank.fieldblist.withsoil <- lapply(pspool.lulu.ntc.blank.fieldblist.withsoil,function(x) as.data.frame(x))
 
+nopool.lulu.ntc.blank.fieldblist.nosoil <- lapply(nopool.lulu.ntc.blank.fieldblist.nosoil,function(x) as.data.frame(x))
+pool.lulu.ntc.blank.fieldblist.nosoil <- lapply(pool.lulu.ntc.blank.fieldblist.nosoil,function(x) as.data.frame(x))
+pspool.lulu.ntc.blank.fieldblist.nosoil <- lapply(pspool.lulu.ntc.blank.fieldblist.nosoil,function(x) as.data.frame(x))
 
-nopool.lulu.ntc.blank.fielddone<- dplyr::bind_rows(nopool.lulu.ntc.blank.fieldblist1, .id = "column_label")
+to_fielddone <- function(x) {
+  out <- dplyr::bind_rows(x, .id = "column_label")
+  out[, -1, drop = FALSE]
+}
 
-pool.lulu.ntc.blank.fielddone<- dplyr::bind_rows(pool.lulu.ntc.blank.fieldblist1, .id = "column_label")
+nopool.lulu.ntc.blank.fielddone.withsoil <- to_fielddone(nopool.lulu.ntc.blank.fieldblist.withsoil)
+pool.lulu.ntc.blank.fielddone.withsoil <- to_fielddone(pool.lulu.ntc.blank.fieldblist.withsoil)
+pspool.lulu.ntc.blank.fielddone.withsoil <- to_fielddone(pspool.lulu.ntc.blank.fieldblist.withsoil)
 
-pspool.lulu.ntc.blank.fielddone<- dplyr::bind_rows(pspool.lulu.ntc.blank.fieldblist1, .id = "column_label")
-
-#removing column id labels
-nopool.lulu.ntc.blank.fielddone<- nopool.lulu.ntc.blank.fielddone[,-1]
-pool.lulu.ntc.blank.fielddone<- pool.lulu.ntc.blank.fielddone[,-1]
-pspool.lulu.ntc.blank.fielddone<-  pspool.lulu.ntc.blank.fielddone[,-1]
+nopool.lulu.ntc.blank.fielddone.nosoil <- to_fielddone(nopool.lulu.ntc.blank.fieldblist.nosoil)
+pool.lulu.ntc.blank.fielddone.nosoil <- to_fielddone(pool.lulu.ntc.blank.fieldblist.nosoil)
+pspool.lulu.ntc.blank.fielddone.nosoil <- to_fielddone(pspool.lulu.ntc.blank.fieldblist.nosoil)
 
 ## removing soil samples from dataframes and split into lists of individual samples for replicate control and combination etc
 #Again, this function is only valid for the root-only (and soil OTU removed) dataset. 
-unique(rownames(nopool.lulu.ntc.blank.fielddone))
+unique(rownames(nopool.lulu.ntc.blank.fielddone.nosoil))
 
-controlledblanks.to.samplelist <- function(x) {
+controlledblanks.to.samplelist <- function(x, sample_index, remove_soil_samples = TRUE) {
   minusNTCBLANK.sample <- x
   
   # Using pattern matching (grep) instead of exact matching
@@ -507,15 +523,15 @@ controlledblanks.to.samplelist <- function(x) {
                          "S_S2_4", "S_S2_5")
   
   # Use grep to match patterns correctly and remove rows
-  rows_to_remove <- grep(paste(samples_to_remove, collapse = "|"), rownames(minusNTCBLANK.sample))
-  minusNTCBLANK.sample <- minusNTCBLANK.sample[-rows_to_remove, , drop = FALSE]
+  if (isTRUE(remove_soil_samples)) {
+    rows_to_remove <- grep(paste(samples_to_remove, collapse = "|"), rownames(minusNTCBLANK.sample))
+    minusNTCBLANK.sample <- minusNTCBLANK.sample[-rows_to_remove, , drop = FALSE]
+  }
   
-  # Hardcoded metadata for nopool
-  sample.info.nopool <- dplyr::bind_rows(nopool.lulu.index, .id = "column_label")
-  row.names(sample.info.nopool) <- sample.info.nopool$full
+  sample.info <- build_sample_info(sample_index)
   
   # Merge and process
-  minusNTCBLANK.sample <- merge(minusNTCBLANK.sample, sample.info.pspool, by = 'row.names', all.x = TRUE)
+  minusNTCBLANK.sample <- merge(minusNTCBLANK.sample, sample.info, by = 'row.names', all.x = TRUE)
   rownames(minusNTCBLANK.sample) <- minusNTCBLANK.sample$Row.names
   minusNTCBLANK.sample <- split(minusNTCBLANK.sample, minusNTCBLANK.sample$sample)
   
@@ -526,14 +542,39 @@ controlledblanks.to.samplelist <- function(x) {
   return(minusNTCBLANK.sample)
 }
 
-nopool.lulu.controlled_1 <- controlledblanks.to.samplelist(nopool.lulu.ntc.blank.fielddone)
-pool.lulu.controlled_1 <- controlledblanks.to.samplelist(pool.lulu.ntc.blank.fielddone)
-pspool.lulu.controlled_1 <-  controlledblanks.to.samplelist(pspool.lulu.ntc.blank.fielddone)
+# WITH SOIL OTUs + WITH soil samples kept
+nopool.lulu.controlled.withsoil <- controlledblanks.to.samplelist(nopool.lulu.ntc.blank.fielddone.withsoil, nopool.lulu.index, remove_soil_samples = FALSE)
+pool.lulu.controlled.withsoil <- controlledblanks.to.samplelist(pool.lulu.ntc.blank.fielddone.withsoil, pool.lulu.index, remove_soil_samples = FALSE)
+pspool.lulu.controlled.withsoil <- controlledblanks.to.samplelist(pspool.lulu.ntc.blank.fielddone.withsoil, pspool.lulu.index, remove_soil_samples = FALSE)
+
+# NO SOIL OTUs + root-only samples (legacy behavior)
+nopool.lulu.controlled_1 <- controlledblanks.to.samplelist(nopool.lulu.ntc.blank.fielddone.nosoil, nopool.lulu.index, remove_soil_samples = TRUE)
+pool.lulu.controlled_1 <- controlledblanks.to.samplelist(pool.lulu.ntc.blank.fielddone.nosoil, pool.lulu.index, remove_soil_samples = TRUE)
+pspool.lulu.controlled_1 <-  controlledblanks.to.samplelist(pspool.lulu.ntc.blank.fielddone.nosoil, pspool.lulu.index, remove_soil_samples = TRUE)
 
 str(nopool.lulu.controlled_1)
 head(rownames(nopool.lulu.controlled_1))
 
-View(sample.info.nopool)
+# Quick diagnostics to confirm each algorithm branch is handled separately
+cat("Controlled list sizes (root samples):\n")
+cat("  nopool:", length(nopool.lulu.controlled_1), "\n")
+cat("  pool  :", length(pool.lulu.controlled_1), "\n")
+cat("  pspool:", length(pspool.lulu.controlled_1), "\n")
+
+cat("Controlled list sizes (with soil samples kept):\n")
+cat("  nopool:", length(nopool.lulu.controlled.withsoil), "\n")
+cat("  pool  :", length(pool.lulu.controlled.withsoil), "\n")
+cat("  pspool:", length(pspool.lulu.controlled.withsoil), "\n")
+
+cat("OTU columns in first root-sample matrix:\n")
+cat("  nopool:", ncol(nopool.lulu.controlled_1[[1]]), "\n")
+cat("  pool  :", ncol(pool.lulu.controlled_1[[1]]), "\n")
+cat("  pspool:", ncol(pspool.lulu.controlled_1[[1]]), "\n")
+
+cat("OTU columns in first root-sample matrix:\n")
+cat("  nopool:", ncol(nopool.lulu.controlled.withsoil[[1]]), "\n")
+cat("  pool  :", ncol(pool.lulu.controlled.withsoil[[1]]), "\n")
+cat("  pspool:", ncol(pspool.lulu.controlled.withsoil[[1]]), "\n")
 
 # =============================================================================
 # SECTION 5 — PHYLOSEQ OBJECT CONSTRUCTION
@@ -569,6 +610,10 @@ library(dada2)
 nopool.lulu.controlled_1  <- lapply(nopool.lulu.controlled_1,  as.matrix)
 pool.lulu.controlled_1    <- lapply(pool.lulu.controlled_1,    as.matrix)
 pspool.lulu.controlled_1  <- lapply(pspool.lulu.controlled_1,  as.matrix)
+
+nopool.lulu.controlled.withsoil  <- lapply(nopool.lulu.controlled.withsoil,  as.matrix)
+pool.lulu.controlled.withsoil    <- lapply(pool.lulu.controlled.withsoil,    as.matrix)
+pspool.lulu.controlled.withsoil  <- lapply(pspool.lulu.controlled.withsoil,  as.matrix)
 
 uniquesToFasta(as.matrix(nopool.lulu.controlled_1[[1]]),  fout="nopool_noSoil.fasta",  ids=paste0("OTU", seq(length(getSequences(nopool.lulu.controlled_1[[1]])))))
 uniquesToFasta(as.matrix(pool.lulu.controlled_1[[1]]),    fout="pool_noSoil.fasta",    ids=paste0("OTU", seq(length(getSequences(pool.lulu.controlled_1[[1]])))))
@@ -607,6 +652,11 @@ nopoolps_noSoil  <- make.phylo(nopool.lulu.controlled_1, exdata, nopoolseqs)
 poolps_noSoil    <- make.phylo(pool.lulu.controlled_1,   exdata, poolseqs)
 pspoolps_noSoil  <- make.phylo(pspool.lulu.controlled_1, exdata, pspoolseqs)
 
+# ---- Raw data (with soil OTUs and soil samples kept) --------------------------
+nopoolps_withSoil <- make.phylo(nopool.lulu.controlled.withsoil, exdata, nopoolseqs)
+poolps_withSoil   <- make.phylo(pool.lulu.controlled.withsoil,   exdata, poolseqs)
+pspoolps_withSoil <- make.phylo(pspool.lulu.controlled.withsoil, exdata, pspoolseqs)
+
 # ---- PCR-replicate-filtered (rg2, rg3, rg4)  ------------------------
 rg2.nopoolps <- make.phylo(rg2.nopool.lulu.controlled, exdata, nopoolseqs)
 rg2.poolps   <- make.phylo(rg2.pool.lulu.controlled,   exdata, poolseqs)
@@ -625,10 +675,222 @@ saveRDS(nopoolps_noSoil, "nopool_phyloseq_noSoil.rds")
 saveRDS(poolps_noSoil,   "pool_phyloseq_noSoil.rds")
 saveRDS(pspoolps_noSoil, "pspool_phyloseq_noSoil.rds")
 
+saveRDS(nopoolps_withSoil, "nopool_phyloseq_withSoil.rds")
+saveRDS(poolps_withSoil,   "pool_phyloseq_withSoil.rds")
+saveRDS(pspoolps_withSoil, "pspool_phyloseq_withSoil.rds")
+
 saveRDS(rg2.nopoolps, "rg2.nopoolps.rds");  saveRDS(rg2.poolps, "rg2.poolps.rds");  saveRDS(rg2.pspoolps, "rg2.pspoolps.rds")
 saveRDS(rg3.nopoolps, "rg3.nopoolps.rds");  saveRDS(rg3.poolps, "rg3.poolps.rds");  saveRDS(rg3.pspoolps, "rg3.pspoolps.rds")
 saveRDS(rg4.nopoolps, "rg4.nopoolps.rds");  saveRDS(rg4.poolps, "rg4.poolps.rds");  saveRDS(rg4.pspoolps, "rg4.pspoolps.rds")
 
 save.image("merged_ITS2.RData")
+load("merged_ITS2.RData")
+
+# =============================================================================
+# SECTION 5b — FULL-COMPLEXITY PHYLOSEQ (pre-PCR-collapse)
+#
+# Purpose
+# -------
+# Build a phyloseq object where EVERY PCR replicate from EVERY root sample
+# is stored as an independent sample row. This is the master input object for
+# Monte Carlo resampling in Monte_Carlo.R — DO NOT collapse PCRs or roots here.
+#
+# Object structure
+# ----------------
+#   otu_table : samples × OTUs   (rows = individual PCR replicates)
+#   sample_data: one row per PCR replicate (see metadata guide below)
+#   refseq()  : DNAStringSet OTU representative sequences
+#   tax_table : added later — reuse the same UNITE taxonomy (see Section 3 of
+#               3_taxonomic_assignment.R) for full consistency with main study.
+#
+# Naming convention for PCR replicate sample IDs (= otu_table row names)
+# -----------------------------------------------------------------------
+# Format: {sample_id}r{pcr_rep}
+# Example: S_6_2_P1r1..r4
+#
+# The "plate" field (P1–P4) is the sequencing PLATE, NOT the root replicate.
+# The root replicate (root 1 or 2 within an individual) is tracked via
+#  root_rep_label / root_rep_num (derived from the replicate_ID suffix).
+#
+# Metadata columns in the expanded PCR-level tables
+# --------------------------------------------------
+# All columns from final_merged_metadata.xlsx are carried through plus:
+#
+# Auto-derived by expand_to_pcr_metadata():
+#   pcr_sample_id  : exact PCR replicate sample ID (= otu_table rowname)
+#                    format: paste0(sample, "r", pcr_rep_num)  e.g. "S_6_2_P1r1"
+#   root_id        : root sample ID (= sample column; all 4 PCRs share this)
+#   pcr_rep_num    : PCR replicate number as integer (1/2/3/4)
+#   pcr_rep_label  : PCR replicate as character ("r1"/"r2"/"r3"/"r4")
+#   root_rep_label : root replicate letter derived from replicate_ID suffix ("a"/"b")
+#   root_rep_num   : root replicate number derived from replicate_ID suffix (1/2)
+#
+# Passed through from collapsed metadata (final_merged_metadata.xlsx):
+#   sample         : root/soil sample ID (e.g. "S_6_2_P1")
+#   Individual_ID  : host individual identifier
+#   replicate_ID   : original field replicate ID (e.g. "DOM_1_2_a")
+#   site           : site name (e.g., DOM, NV, BEL, PAR)
+#   site_elevation : site × elevation combination (e.g., DOM_1, DOM_2, DOM_3)
+#   elevation      : raw elevation in metres
+#   elevation_adj  : adjusted elevation (if applicable)
+#   habitat        : habitat type
+#   treeline       : above/below treeline
+#   plate          : sequencing plate (P1/P2/P3/P4; from metadata file)
+#   + all soil chemistry columns
+#
+# Output CSV:  ITS_pcr_metadata.csv  (nopool with-soil — the largest object; row-order
+#              matches fullmat_nopool_withsoil and is usable across all datasets)
+# =============================================================================
+
+# ---- Helper: stack all PCR replicate rows into one flat OTU matrix ----------
+# pcr_list: named list (one element per root sample; rows = PCR reps, cols = OTU sequences)
+# otu_ids : character vector of short OTU IDs (OTU1, OTU2, ...) matching the OTU seq columns
+make_flat_otu_mat <- function(pcr_list, otu_ids) {
+  flat <- do.call(rbind, lapply(pcr_list, as.matrix))
+  storage.mode(flat) <- "numeric"
+  flat[is.na(flat)] <- 0
+  colnames(flat) <- otu_ids
+  flat
+}
+
+# ---- OTU IDs (one per column-sequence, consistent with FASTA files above) ---
+nopool_otu_ids  <- paste0("OTU", seq_len(ncol(nopool.lulu.controlled_1[[1]])))
+pool_otu_ids    <- paste0("OTU", seq_len(ncol(pool.lulu.controlled_1[[1]])))
+pspool_otu_ids  <- paste0("OTU", seq_len(ncol(pspool.lulu.controlled_1[[1]])))
+
+# ---- Build flat OTU matrices ------------------------------------------------
+fullmat_nopool  <- make_flat_otu_mat(nopool.lulu.controlled_1,  nopool_otu_ids)
+fullmat_pool    <- make_flat_otu_mat(pool.lulu.controlled_1,    pool_otu_ids)
+fullmat_pspool  <- make_flat_otu_mat(pspool.lulu.controlled_1,  pspool_otu_ids)
+
+fullmat_nopool_withsoil <- make_flat_otu_mat(nopool.lulu.controlled.withsoil, nopool_otu_ids)
+fullmat_pool_withsoil   <- make_flat_otu_mat(pool.lulu.controlled.withsoil,   pool_otu_ids)
+fullmat_pspool_withsoil <- make_flat_otu_mat(pspool.lulu.controlled.withsoil, pspool_otu_ids)
+
+cat("Full-complexity matrix dimensions (PCR replicates × OTUs):\n")
+cat("  nopool :", nrow(fullmat_nopool),  "PCR samples ×", ncol(fullmat_nopool),  "OTUs\n")
+cat("  pool   :", nrow(fullmat_pool),    "PCR samples ×", ncol(fullmat_pool),    "OTUs\n")
+cat("  pspool :", nrow(fullmat_pspool),  "PCR samples ×", ncol(fullmat_pspool),  "OTUs\n")
+cat("Full-complexity WITH-SOIL matrix dimensions (PCR replicates × OTUs):\n")
+cat("  nopool :", nrow(fullmat_nopool_withsoil),  "PCR samples ×", ncol(fullmat_nopool_withsoil),  "OTUs\n")
+cat("  pool   :", nrow(fullmat_pool_withsoil),    "PCR samples ×", ncol(fullmat_pool_withsoil),    "OTUs\n")
+cat("  pspool :", nrow(fullmat_pspool_withsoil),  "PCR samples ×", ncol(fullmat_pspool_withsoil),  "OTUs\n")
+
+# ---- Reference sequences (DNAStringSet) — one per OTU -----------------------
+dna_nopool  <- Biostrings::DNAStringSet(colnames(nopool.lulu.controlled_1[[1]]))
+names(dna_nopool)  <- nopool_otu_ids
+
+dna_pool    <- Biostrings::DNAStringSet(colnames(pool.lulu.controlled_1[[1]]))
+names(dna_pool)    <- pool_otu_ids
+
+dna_pspool  <- Biostrings::DNAStringSet(colnames(pspool.lulu.controlled_1[[1]]))
+names(dna_pspool)  <- pspool_otu_ids
+
+# ---- Build PCR-level metadata from final_merged_metadata --------------------
+# The collapsed metadata has sample IDs like: S_6_2_P1
+# We expand each biological sample row to 4 PCR rows:
+#   S_6_2_P1r1, S_6_2_P1r2, S_6_2_P1r3, S_6_2_P1r4
+
+load_collapsed_metadata <- function(
+  xlsx_path = "final_merged_metadata.xlsx",
+  csv_path = "final_merged_metadata_from_xlsx.csv"
+) {
+  if (file.exists(xlsx_path) && requireNamespace("readxl", quietly = TRUE)) {
+    meta <- readxl::read_excel(xlsx_path)
+    return(as.data.frame(meta, stringsAsFactors = FALSE))
+  }
+  if (file.exists(csv_path)) {
+    return(read.csv(csv_path, stringsAsFactors = FALSE, check.names = FALSE))
+  }
+  stop("Could not find metadata source. Provide either final_merged_metadata.xlsx (with readxl installed) or final_merged_metadata_from_xlsx.csv")
+}
+
+expand_to_pcr_metadata <- function(meta_collapsed, reps = 1:4, sampletype_keep = "S") {
+  required_cols <- c("sample", "sampletype", "Individual_ID", "replicate_ID")
+  missing_cols <- setdiff(required_cols, colnames(meta_collapsed))
+  if (length(missing_cols) > 0) {
+    stop(sprintf("Collapsed metadata missing columns: %s", paste(missing_cols, collapse = ", ")))
+  }
+
+  base <- meta_collapsed %>%
+    dplyr::filter(.data$sampletype %in% sampletype_keep) %>%
+    dplyr::mutate(root_id = .data$sample)
+
+  expanded <- base[rep(seq_len(nrow(base)), each = length(reps)), , drop = FALSE]
+  expanded$pcr_rep_num <- rep(reps, times = nrow(base))
+  expanded$pcr_rep_label <- paste0("r", expanded$pcr_rep_num)
+  expanded$pcr_sample_id <- paste0(expanded$sample, expanded$pcr_rep_label)
+
+  # Keep root replicate tracking explicit (from replicate_ID; typically *_a / *_b)
+  rep_suffix <- sub("^.*_", "", expanded$replicate_ID)
+  expanded$root_rep_label <- dplyr::case_when(
+    rep_suffix %in% c("a", "A") ~ "a",
+    rep_suffix %in% c("b", "B") ~ "b",
+    TRUE ~ NA_character_
+  )
+  expanded$root_rep_num <- dplyr::case_when(
+    expanded$root_rep_label == "a" ~ 1L,
+    expanded$root_rep_label == "b" ~ 2L,
+    TRUE ~ NA_integer_
+  )
+
+  rownames(expanded) <- expanded$pcr_sample_id
+  expanded
+}
+
+align_meta_to_otu <- function(meta_df, otu_mat) {
+  missing <- setdiff(rownames(otu_mat), rownames(meta_df))
+  if (length(missing) > 0) {
+    stop(sprintf("Metadata missing %d PCR sample IDs from OTU matrix. Example: %s",
+                 length(missing), paste(head(missing, 6), collapse = ", ")))
+  }
+  meta_df[rownames(otu_mat), , drop = FALSE]
+}
+
+meta_collapsed <- load_collapsed_metadata()
+meta_pcr <- expand_to_pcr_metadata(meta_collapsed, reps = 1:4, sampletype_keep = "S")
+
+# Metadata aligned to the no-soil full-complexity matrices (120 roots x 4 PCR = 480 rows)
+pcr_meta_nopool <- align_meta_to_otu(meta_pcr, fullmat_nopool)
+pcr_meta_pool <- align_meta_to_otu(meta_pcr, fullmat_pool)
+pcr_meta_pspool <- align_meta_to_otu(meta_pcr, fullmat_pspool)
+
+# Metadata aligned to the with-soil full-complexity matrices (132 samples x 4 PCR = 528 rows)
+pcr_meta_nopool_withsoil <- align_meta_to_otu(meta_pcr, fullmat_nopool_withsoil)
+pcr_meta_pool_withsoil <- align_meta_to_otu(meta_pcr, fullmat_pool_withsoil)
+pcr_meta_pspool_withsoil <- align_meta_to_otu(meta_pcr, fullmat_pspool_withsoil)
+
+# Single shared metadata CSV — nopool with-soil is the largest (528 rows) and covers all
+# datasets; other datasets are a strict subset of these sample IDs.
+write.csv(pcr_meta_nopool_withsoil, "ITS_pcr_metadata.csv", row.names = TRUE, na = "")
+message("Wrote PCR-level metadata: ITS_pcr_metadata.csv (nopool with-soil, 528 rows)")
+
+# ---- Build full-complexity phyloseq (pre-PCR-collapse) ----------------------
+make_fullcomplexity_ps <- function(flat_mat, meta_df, dna_set) {
+  meta_ordered <- meta_df[rownames(flat_mat), , drop = FALSE]
+  otu_ps  <- otu_table(flat_mat, taxa_are_rows = FALSE)
+  samp_ps <- sample_data(meta_ordered)
+  merge_phyloseq(phyloseq(otu_ps, samp_ps), dna_set)
+}
+
+fullps_nopool  <- make_fullcomplexity_ps(fullmat_nopool,  pcr_meta_nopool, dna_nopool)
+fullps_pool    <- make_fullcomplexity_ps(fullmat_pool,    pcr_meta_pool,   dna_pool)
+fullps_pspool  <- make_fullcomplexity_ps(fullmat_pspool,  pcr_meta_pspool, dna_pspool)
+
+fullps_nopool_withsoil <- make_fullcomplexity_ps(fullmat_nopool_withsoil, pcr_meta_nopool_withsoil, dna_nopool)
+fullps_pool_withsoil   <- make_fullcomplexity_ps(fullmat_pool_withsoil,   pcr_meta_pool_withsoil,   dna_pool)
+fullps_pspool_withsoil <- make_fullcomplexity_ps(fullmat_pspool_withsoil, pcr_meta_pspool_withsoil, dna_pspool)
+
+# Taxonomy is added in 3_taxonomic_assignment.R (same UNITE tax_table).
+saveRDS(fullps_nopool,  "fullps_nopool.rds")
+saveRDS(fullps_pool,    "fullps_pool.rds")
+saveRDS(fullps_pspool,  "fullps_pspool.rds")
+saveRDS(fullps_nopool_withsoil, "fullps_nopool_withsoil.rds")
+saveRDS(fullps_pool_withsoil,   "fullps_pool_withsoil.rds")
+saveRDS(fullps_pspool_withsoil, "fullps_pspool_withsoil.rds")
+message("Full-complexity phyloseq objects saved (without taxonomy):")
+message("  fullps_nopool.rds, fullps_pool.rds, fullps_pspool.rds")
+message("  fullps_nopool_withsoil.rds, fullps_pool_withsoil.rds, fullps_pspool_withsoil.rds")
+message("Next: run 3_taxonomic_assignment.R Section 3b to attach tax_table.")
 
 # Next step: 3_taxonomic_assignment.R
