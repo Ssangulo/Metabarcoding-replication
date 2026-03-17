@@ -87,7 +87,7 @@ Key ID fields in `ITS_pcr_metadata.csv` (used in `4_data_prep.R`):
 - `root_id`: parent root sample ID (e.g., `S_1_1_P3`)
 - `pcr_rep_num`: PCR replicate number (`1..4`)
 - `replicate_ID`: biological root replicate tracking (e.g., `BEL_2_1_a`)
-- `root_rep_label` / `root_rep_num`: root replicate identity when available (`a/b` and `1/2`)
+- `root_rep_label` root replicate identity  (`a/b`)
 
 Notes:
 
