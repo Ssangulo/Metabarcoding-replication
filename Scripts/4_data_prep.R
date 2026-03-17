@@ -24,99 +24,267 @@ library(tidyr)
 
 setwd("/data/lastexpansion/danieang/data/trimmed/mergedPlates/")
 
-np1   <- readRDS("poolps.rds")
-np2   <- readRDS("rg2.poolps.rds")
-np3   <- readRDS("rg3.poolps.rds")
-np4   <- readRDS("rg4.poolps.rds")
+# Full-complexity phyloseq objects (rows = individual PCR replicates)
+# Built in 2_DADA2_lulu.R Section 5b; taxonomy attached in 3_taxonomic_assignment.R Section 3b
+fullps_nopool          <- readRDS("fullps_nopool.rds")
+fullps_pool            <- readRDS("fullps_pool.rds")
+fullps_pspool          <- readRDS("fullps_pspool.rds")
+fullps_nopool_withsoil <- readRDS("fullps_nopool_withsoil.rds")
+fullps_pool_withsoil   <- readRDS("fullps_pool_withsoil.rds")
+fullps_pspool_withsoil <- readRDS("fullps_pspool_withsoil.rds")
 
-# No-soil versions (soil reads removed)
-np1.N <- readRDS("poolps.dada2.nosoil.rds")
-np2.N <- readRDS("rg2.poolps_tax_nosoil.rds")
-np3.N <- readRDS("rg3.poolps_tax_nosoil.rds")
-np4.N <- readRDS("rg4.poolps_tax_nosoil.rds")
+# Deep sanity checks: object class + taxonomy slot
+fullps_all <- list(
+  nopool_noSoil   = fullps_nopool,
+  pool_noSoil     = fullps_pool,
+  pspool_noSoil   = fullps_pspool,
+  nopool_withsoil = fullps_nopool_withsoil,
+  pool_withsoil   = fullps_pool_withsoil,
+  pspool_withsoil = fullps_pspool_withsoil
+)
+stopifnot(all(vapply(fullps_all, function(ps) inherits(ps, "phyloseq"), logical(1))))
+stopifnot(all(vapply(fullps_all, function(ps) !is.null(tax_table(ps, errorIfNULL=FALSE)), logical(1))))
 
-# Inspect OTU table dimensions
-otu_tab <- otu_table(np2)
-dim(otu_tab)
+# Update metadata from CSV (PCR-level metadata, exact sample-id matching)
+new_metadata <- read.csv("/data/lastexpansion/danieang/data/trimmed/mergedPlates/ITS_pcr_metadata.csv",
+                         row.names=1,
+                         check.names=FALSE)
 
-# Update metadata from CSV
-new_metadata <- read.csv("/data/lastexpansion/danieang/data/trimmed/mergedPlates/ITS_metadata_Soil.csv",
-                         row.names=1)
-
-for (ps_obj in c("np1","np2","np3","np4")) {
-  if (exists(ps_obj)) sample_data(get(ps_obj)) <- sample_data(new_metadata)
+attach_metadata_strict <- function(ps, meta_df, label) {
+  sn <- sample_names(ps)
+  missing_meta <- setdiff(sn, rownames(meta_df))
+  if (length(missing_meta) > 0) {
+    stop(sprintf("%s has %d samples without metadata. First missing IDs: %s",
+                 label,
+                 length(missing_meta),
+                 paste(head(missing_meta, 10), collapse=", ")))
+  }
+  sample_data(ps) <- sample_data(meta_df[sn, , drop=FALSE])
+  ps
 }
-sample_data(np1.N) <- sample_data(new_metadata)
-sample_data(np2.N) <- sample_data(new_metadata)
-sample_data(np3.N) <- sample_data(new_metadata)
-sample_data(np4.N) <- sample_data(new_metadata)
+
+fullps_nopool          <- attach_metadata_strict(fullps_nopool, new_metadata, "fullps_nopool")
+fullps_pool            <- attach_metadata_strict(fullps_pool, new_metadata, "fullps_pool")
+fullps_pspool          <- attach_metadata_strict(fullps_pspool, new_metadata, "fullps_pspool")
+fullps_nopool_withsoil <- attach_metadata_strict(fullps_nopool_withsoil, new_metadata, "fullps_nopool_withsoil")
+fullps_pool_withsoil   <- attach_metadata_strict(fullps_pool_withsoil, new_metadata, "fullps_pool_withsoil")
+fullps_pspool_withsoil <- attach_metadata_strict(fullps_pspool_withsoil, new_metadata, "fullps_pspool_withsoil")
 
 # =============================================================================
 # SECTION 2 — BUILD DATASET LISTS
 # =============================================================================
 
-alldat       <- list(np1,   np2,   np3,   np4)    # Full dataset (with soil)
-alldat.N     <- list(np1.N, np2.N, np3.N, np4.N)  # Root samples only; soil reads removed
-alldat.root  <- list(np1,   np2,   np3,   np4)    # Root samples only; soil reads kept
+# Separate lists : with-soil and no-soil
+alldat.S <- list(fullps_nopool_withsoil, fullps_pool_withsoil, fullps_pspool_withsoil)
+alldat.N <- list(fullps_nopool,          fullps_pool,          fullps_pspool)
+names(alldat.S) <- names(alldat.N) <- c("nopool", "pool", "pspool")
 
-names(alldat) <- names(alldat.N) <- names(alldat.root) <- c("nofilt","rg2","rg3","rg4")
-
-# Remove 12 soil samples from alldat.root
-alldat.root <- lapply(alldat.root, function(ps_obj) {
-  subset_samples(ps_obj, Individual != "S")
-})
 
 # Validate and prune undetected taxa
-alldat       <- lapply(alldat,      function(x) phyloseq_validate(x, remove_undetected=TRUE))
-alldat.N     <- lapply(alldat.N,    function(x) phyloseq_validate(x, remove_undetected=TRUE))
-alldat.root  <- lapply(alldat.root, function(x) phyloseq_validate(x, remove_undetected=TRUE))
+alldat.S   <- lapply(alldat.S,   function(x) phyloseq_validate(x, remove_undetected=TRUE))
+alldat.N   <- lapply(alldat.N,   function(x) phyloseq_validate(x, remove_undetected=TRUE))
 
 # Quick overview
-alldat
-alldat.N
+print(data.frame(
+  object = names(alldat.S),
+  n_samples_withsoil = vapply(alldat.S, nsamples, integer(1)),
+  n_samples_nosoil = vapply(alldat.N, nsamples, integer(1)),
+  n_taxa_withsoil = vapply(alldat.S, ntaxa, integer(1)),
+  n_taxa_nosoil = vapply(alldat.N, ntaxa, integer(1))
+))
 
 # =============================================================================
 # SECTION 3 — REMOVE NON-FUNGAL (HOST) OTUs
 # During sanity checks (% reads assigned, % OTUs assigned, top-OTU inspection)
 # it was noticed that the top 5 most abundant OTUs lacked taxonomy beyond
 # Kingdom Fungi in UNITE. Sequences of the top 100 OTUs were exported and
-# submitted to PlutoF SH matching v2.0.0, which identified 6 of them as
-# Ericaceae host plant DNA.
-# These 6 OTUs accounted for ~60% of all reads in alldat.N[[2]].
+# submitted to PlutoF SH matching v2.0.0. We now export one FASTA per strategy
+# and use one PlutoF output CSV per strategy to remove non-fungal OTUs.
 # =============================================================================
 
-# ---- Check top 100 OTUs and export for PlutoF SH matching -------------------
-ps_check <- alldat.N[[2]]
-otu_mat  <- as(otu_table(ps_check), "matrix")
-if (!taxa_are_rows(ps_check)) otu_mat <- t(otu_mat)
+# ---- 3A) Export strategy-specific TOP100 FASTA files (with-soil objects) ---
+# Each DADA2 strategy has its own OTU namespace, so PlutoF must be run
+# independently for nopool / pool / pspool using separate FASTA files.
+get_taxa_sequence_map <- function(ps, object_label) {
+  seqs <- phyloseq::refseq(ps, errorIfNULL=FALSE)
+  if (!is.null(seqs)) {
+    return(stats::setNames(as.character(seqs), taxa_names(ps)))
+  }
 
-top100_otus <- data.frame(
-  OTU_ID      = names(rowSums(otu_mat)),
-  total_reads = rowSums(otu_mat)
-) |>
-  dplyr::arrange(desc(total_reads)) |>
-  dplyr::slice(1:100)
-print(top100_otus)
+  if (all(grepl("^[ACGTN]+$", taxa_names(ps)))) {
+    return(stats::setNames(taxa_names(ps), taxa_names(ps)))
+  }
 
-# Export FASTA for PlutoF submission (https://plutof.ut.ee → SH matching v2.0.0)
-top100_seqs <- refseq(ps_check)[top100_otus$OTU_ID]
-writeXStringSet(top100_seqs, filepath="top100_OTUs_refseqs.fasta", format="fasta")
+  stop(sprintf(
+    "%s has no reference sequences attached, cannot export strategy-specific FASTA for PlutoF.",
+    object_label
+  ))
+}
 
-# ---- Quantify contamination -------------------------------------------------
-# PlutoF result: the 6 OTUs below are Ericaceae host sequences
-host_otus <- c("OTU1", "OTU13615", "OTU14390", "OTU15169", "OTU15933", "OTU2310")
+export_top100_fasta <- function(ps, object_label, n_top=100, out_dir=".") {
+  otu_mat <- as(otu_table(ps), "matrix")
+  if (!taxa_are_rows(ps)) otu_mat <- t(otu_mat)
 
-total_reads <- sum(otu_mat)
-host_reads  <- sum(otu_mat[host_otus[host_otus %in% rownames(otu_mat)], , drop=FALSE])
-message(sprintf("Host reads: %d / %d total (%.1f%%)",
-                host_reads, total_reads, 100 * host_reads / total_reads))
+  totals <- rowSums(otu_mat)
+  n_keep <- min(n_top, length(totals))
+  top_ids <- names(sort(totals, decreasing=TRUE))[seq_len(n_keep)]
 
-# ---- Remove host OTUs from all dataset lists --------------------------------
-remove_host <- function(ps) prune_taxa(!taxa_names(ps) %in% host_otus, ps)
+  seq_map <- get_taxa_sequence_map(ps, object_label)
+  top_seq <- seq_map[top_ids]
 
-alldat      <- lapply(alldat,      remove_host)
-alldat.N    <- lapply(alldat.N,    remove_host)
-alldat.root <- lapply(alldat.root, remove_host)
+  top_tbl <- data.frame(
+    rank = seq_len(n_keep),
+    otu_id = top_ids,
+    reads_total = as.numeric(totals[top_ids]),
+    sequence = as.character(top_seq),
+    stringsAsFactors = FALSE
+  )
+
+  fasta_path <- file.path(out_dir, sprintf("plutof_top100_%s_withsoil.fasta", object_label))
+  table_path <- file.path(out_dir, sprintf("plutof_top100_%s_withsoil_table.csv", object_label))
+
+  fasta_lines <- as.vector(rbind(paste0(">", top_tbl$otu_id), top_tbl$sequence))
+  writeLines(fasta_lines, con=fasta_path)
+  write.csv(top_tbl[, c("rank", "otu_id", "reads_total")], file=table_path, row.names=FALSE)
+
+  data.frame(
+    object = object_label,
+    n_exported = n_keep,
+    fasta_file = fasta_path,
+    table_file = table_path,
+    stringsAsFactors = FALSE
+  )
+}
+
+top100_export_report <- dplyr::bind_rows(Map(export_top100_fasta, alldat.S, names(alldat.S)))
+cat("PlutoF export files generated (with-soil objects):\n")
+print(top100_export_report)
+cat("Run PlutoF separately for each FASTA and save outputs using EXACT names:\n")
+cat("  nopool -> matches_out_taxonomy_nopool.csv\n")
+cat("  pool   -> matches_out_taxonomy_pool.csv\n")
+cat("  pspool -> matches_out_taxonomy_pspool.csv\n")
+
+# ---- 3B) Read PlutoF CSV per strategy and classify non-fungal OTUs ---------
+# Explicit one-to-one mapping: strategy name -> PlutoF CSV file name
+plutof_files <- c(
+  nopool = "matches_out_taxonomy_nopool.csv",
+  pool   = "matches_out_taxonomy_pool.csv",
+  pspool = "matches_out_taxonomy_pspool.csv"
+)
+
+find_plutof_path <- function(strategy) {
+  if (!strategy %in% names(plutof_files)) {
+    stop(sprintf("Unknown strategy '%s'. Expected one of: %s",
+                 strategy, paste(names(plutof_files), collapse=", ")))
+  }
+
+  expected <- unname(plutof_files[[strategy]])
+  if (!file.exists(expected)) {
+    stop(sprintf(
+      "Could not find PlutoF output for '%s'. Expected exact file: %s",
+      strategy,
+      expected
+    ))
+  }
+
+  expected
+}
+
+read_nonfungal_ids_for_strategy <- function(strategy, valid_ids) {
+  plutof_path <- find_plutof_path(strategy)
+  plutof_tax <- read.delim(plutof_path, stringsAsFactors=FALSE, check.names=FALSE)
+  required_cols <- c("seq_name", "common_taxonomy")
+  stopifnot(all(required_cols %in% colnames(plutof_tax)))
+
+  class_tbl <- plutof_tax |>
+    dplyr::filter(!is.na(seq_name), seq_name != "") |>
+    dplyr::mutate(
+      is_fungal = grepl("^k__Fungi(;|$)", common_taxonomy),
+      is_nonfungal = !is_fungal
+    ) |>
+    dplyr::group_by(seq_name) |>
+    dplyr::summarise(
+      any_nonfungal = any(is_nonfungal),
+      any_fungal = any(is_fungal),
+      n_rows = dplyr::n(),
+      .groups = "drop"
+    )
+
+  conflict_ids <- class_tbl |>
+    dplyr::filter(any_nonfungal & any_fungal) |>
+    dplyr::pull(seq_name)
+  if (length(conflict_ids) > 0) {
+    cat(sprintf("%s: OTUs with mixed fungal/non-fungal PlutoF rows: %d\n", strategy, length(conflict_ids)))
+  }
+
+  nonfungal_ids <- class_tbl |>
+    dplyr::filter(any_nonfungal) |>
+    dplyr::pull(seq_name)
+
+  nonfungal_ids <- intersect(nonfungal_ids, valid_ids)
+  cat(sprintf("%s: non-fungal OTUs flagged (present in object): %d\n", strategy, length(nonfungal_ids)))
+  nonfungal_ids
+}
+
+nonfungal_ids_by_strategy <- setNames(
+  lapply(names(alldat.S), function(nm) read_nonfungal_ids_for_strategy(nm, taxa_names(alldat.S[[nm]]))),
+  names(alldat.S)
+)
+
+# ---- Quantify contamination per object before removal -----------------------
+audit_nonfungal <- function(ps, object_label, drop_ids) {
+  otu_mat <- as(otu_table(ps), "matrix")
+  if (!taxa_are_rows(ps)) otu_mat <- t(otu_mat)
+  present_drop <- intersect(drop_ids, rownames(otu_mat))
+
+  reads_total <- sum(otu_mat)
+  reads_nonfungal <- if (length(present_drop) > 0) sum(otu_mat[present_drop, , drop=FALSE]) else 0
+
+  data.frame(
+    object = object_label,
+    taxa_total = nrow(otu_mat),
+    nonfungal_taxa_present = length(present_drop),
+    reads_total = reads_total,
+    reads_nonfungal = reads_nonfungal,
+    pct_reads_nonfungal = if (reads_total > 0) 100 * reads_nonfungal / reads_total else 0
+  )
+}
+
+audit_S <- dplyr::bind_rows(lapply(names(alldat.S), function(nm) {
+  audit_nonfungal(alldat.S[[nm]], nm, nonfungal_ids_by_strategy[[nm]])
+}))
+audit_N <- dplyr::bind_rows(lapply(names(alldat.N), function(nm) {
+  audit_nonfungal(alldat.N[[nm]], nm, nonfungal_ids_by_strategy[[nm]])
+}))
+cat("Non-fungal audit (with-soil):\n")
+print(audit_S)
+cat("Non-fungal audit (no-soil):\n")
+print(audit_N)
+
+# ---- Remove non-fungal OTUs from both lists ---------------------------------
+remove_nonfungal <- function(ps, drop_ids) {
+  prune_taxa(!taxa_names(ps) %in% drop_ids, ps)
+}
+
+alldat.S <- setNames(lapply(names(alldat.S), function(nm) {
+  remove_nonfungal(alldat.S[[nm]], nonfungal_ids_by_strategy[[nm]])
+}), names(alldat.S))
+
+alldat.N <- setNames(lapply(names(alldat.N), function(nm) {
+  remove_nonfungal(alldat.N[[nm]], nonfungal_ids_by_strategy[[nm]])
+}), names(alldat.N))
+
+# Keep legacy list names for downstream compatibility
+alldat <- alldat.S
+alldat.root <- alldat.N
+
+# Refresh explicit object names for downstream script sections
+fullps_nopool_withsoil <- alldat.S$nopool
+fullps_pool_withsoil   <- alldat.S$pool
+fullps_pspool_withsoil <- alldat.S$pspool
+fullps_nopool          <- alldat.N$nopool
+fullps_pool            <- alldat.N$pool
+fullps_pspool          <- alldat.N$pspool
 
 # =============================================================================
 # SECTION 4 — RAREFACTION CURVE AND LIBRARY DEPTH CHECKS
@@ -266,6 +434,63 @@ ps_fungi <- alldat.N[[2]]   # main analysis object (rg2, no-soil roots)
 balanced_ps <- subset_samples(individual_ps, site %in% c("DOM","NV"))
 balanced_ps <- subset_samples(balanced_ps, !(site_elevation == "NV_4"))
 balanced_ps <- prune_taxa(taxa_sums(balanced_ps) > 0, balanced_ps)
+
+# =============================================================================
+# SECTION 10 — FULL-COMPLEXITY PHYLOSEQ PREPARATION
+# These objects retain individual PCR replicates as samples and are used for
+# replication analyses (e.g. Monte_Carlo.R). No rarefaction is applied here.
+# =============================================================================
+
+# Attach updated metadata
+new_metadata_full <- read.csv("/data/lastexpansion/danieang/data/trimmed/mergedPlates/fix_metadata.csv",
+                              row.names=1)
+
+# Only attach metadata rows that match sample names present in each object
+attach_meta <- function(ps, meta) {
+  keep <- intersect(sample_names(ps), rownames(meta))
+  sample_data(ps) <- sample_data(meta[keep, , drop=FALSE])
+  ps
+}
+
+fullps_nopool          <- attach_meta(fullps_nopool,          new_metadata_full)
+fullps_pool            <- attach_meta(fullps_pool,            new_metadata_full)
+fullps_pspool          <- attach_meta(fullps_pspool,          new_metadata_full)
+fullps_nopool_withsoil <- attach_meta(fullps_nopool_withsoil, new_metadata_full)
+fullps_pool_withsoil   <- attach_meta(fullps_pool_withsoil,   new_metadata_full)
+fullps_pspool_withsoil <- attach_meta(fullps_pspool_withsoil, new_metadata_full)
+
+# Per-sample depth summary for full-complexity objects
+cat("fullps_nopool:          ", range(sample_sums(fullps_nopool)),          "\n")
+cat("fullps_pool:            ", range(sample_sums(fullps_pool)),            "\n")
+cat("fullps_pspool:          ", range(sample_sums(fullps_pspool)),          "\n")
+cat("fullps_nopool_withsoil: ", range(sample_sums(fullps_nopool_withsoil)), "\n")
+cat("fullps_pool_withsoil:   ", range(sample_sums(fullps_pool_withsoil)),   "\n")
+cat("fullps_pspool_withsoil: ", range(sample_sums(fullps_pspool_withsoil)), "\n")
+
+# Remove PCR replicates below minimum depth threshold
+fullps_nopool          <- prune_samples(sample_sums(fullps_nopool)          >= min_depth, fullps_nopool)
+fullps_pool            <- prune_samples(sample_sums(fullps_pool)            >= min_depth, fullps_pool)
+fullps_pspool          <- prune_samples(sample_sums(fullps_pspool)          >= min_depth, fullps_pspool)
+fullps_nopool_withsoil <- prune_samples(sample_sums(fullps_nopool_withsoil) >= min_depth, fullps_nopool_withsoil)
+fullps_pool_withsoil   <- prune_samples(sample_sums(fullps_pool_withsoil)   >= min_depth, fullps_pool_withsoil)
+fullps_pspool_withsoil <- prune_samples(sample_sums(fullps_pspool_withsoil) >= min_depth, fullps_pspool_withsoil)
+
+# Prune taxa with zero counts after sample removal
+fullps_nopool          <- prune_taxa(taxa_sums(fullps_nopool)          > 0, fullps_nopool)
+fullps_pool            <- prune_taxa(taxa_sums(fullps_pool)            > 0, fullps_pool)
+fullps_pspool          <- prune_taxa(taxa_sums(fullps_pspool)          > 0, fullps_pspool)
+fullps_nopool_withsoil <- prune_taxa(taxa_sums(fullps_nopool_withsoil) > 0, fullps_nopool_withsoil)
+fullps_pool_withsoil   <- prune_taxa(taxa_sums(fullps_pool_withsoil)   > 0, fullps_pool_withsoil)
+fullps_pspool_withsoil <- prune_taxa(taxa_sums(fullps_pspool_withsoil) > 0, fullps_pspool_withsoil)
+
+# Sample counts after depth filtering
+cat("Samples remaining after depth filter:\n")
+cat("  fullps_nopool:         ", nsamples(fullps_nopool),          "\n")
+cat("  fullps_pool:           ", nsamples(fullps_pool),            "\n")
+cat("  fullps_pspool:         ", nsamples(fullps_pspool),          "\n")
+cat("  fullps_nopool_withsoil:", nsamples(fullps_nopool_withsoil), "\n")
+cat("  fullps_pool_withsoil:  ", nsamples(fullps_pool_withsoil),   "\n")
+cat("  fullps_pspool_withsoil:", nsamples(fullps_pspool_withsoil), "\n")
 
 save.image(file="eco_analysis.RData")
 # load("eco_analysis.RData")

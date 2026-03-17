@@ -132,14 +132,9 @@ saveRDS(rg4.nopoolps.noSoil, "rg4.nopoolps.noSoil.rds");  saveRDS(rg4.poolps.noS
 # in 2_DADA2_lulu.R Section 5b with rows = individual PCR replicates.
 # Here we attach the SAME tax_table from UNITE to these objects to ensure
 # full consistency with the main study.
-#
-# Why reuse instead of re-annotating?
-# ------------------------------------
-# This replication paper must use identical taxonomy to allow direct comparison.
-# The tax_table rows are OTU IDs (OTU1, OTU2 ...) which match the column names
-# in the full-complexity OTU table — so the same table can be attached directly.
 # =============================================================================
 
+# ---- NO SOIL variants (legacy behavior) --------------------------------------
 fullps_nopool  <- readRDS("fullps_nopool.rds")
 fullps_pool    <- readRDS("fullps_pool.rds")
 fullps_pspool  <- readRDS("fullps_pspool.rds")
@@ -162,6 +157,29 @@ saveRDS(fullps_nopool,  "fullps_nopool.rds")   # overwrites version without taxo
 saveRDS(fullps_pool,    "fullps_pool.rds")
 saveRDS(fullps_pspool,  "fullps_pspool.rds")
 
+# ---- WITH SOIL variants (including soil samples and OTUs) -------------------
+fullps_nopool_withsoil  <- readRDS("fullps_nopool_withsoil.rds")
+fullps_pool_withsoil    <- readRDS("fullps_pool_withsoil.rds")
+fullps_pspool_withsoil  <- readRDS("fullps_pspool_withsoil.rds")
+
+# Confirm OTU ID alignment before attaching
+stopifnot(all(taxa_names(fullps_nopool_withsoil)  %in% rownames(tax_table_nopoolps)))
+stopifnot(all(taxa_names(fullps_pool_withsoil)    %in% rownames(tax_table_poolps)))
+stopifnot(all(taxa_names(fullps_pspool_withsoil)  %in% rownames(tax_table_pspoolps)))
+
+tax_table(fullps_nopool_withsoil)  <- tax_table_nopoolps[taxa_names(fullps_nopool_withsoil),  ]
+tax_table(fullps_pool_withsoil)    <- tax_table_poolps[taxa_names(fullps_pool_withsoil),      ]
+tax_table(fullps_pspool_withsoil)  <- tax_table_pspoolps[taxa_names(fullps_pspool_withsoil),  ]
+
+# Quick check
+cat("Full-complexity phyloseq with soil (nopool): ",
+    nsamples(fullps_nopool_withsoil), "PCR samples, ",
+    ntaxa(fullps_nopool_withsoil),    "OTUs, taxonomy attached:", !is.null(tax_table(fullps_nopool_withsoil, errorIfNULL=FALSE)), "\n")
+
+saveRDS(fullps_nopool_withsoil,  "fullps_nopool_withsoil.rds")
+saveRDS(fullps_pool_withsoil,    "fullps_pool_withsoil.rds")
+saveRDS(fullps_pspool_withsoil,  "fullps_pspool_withsoil.rds")
+
 # Next step: 4_data_prep.R
-# For the replication paper: proceed to Monte_Carlo.R using fullps_nopool (or
-# fullps_pool / fullps_pspool) as the input object.
+# For the replication paper: proceed to Monte_Carlo.R using fullps_nopool/fullps_pool/fullps_pspool
+# or their withsoil counterparts as needed.
