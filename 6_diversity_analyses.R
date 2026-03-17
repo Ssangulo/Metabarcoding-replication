@@ -51,20 +51,6 @@ saveRDS(tree_data_rg2.N, "tree_rg2N.rds")
 # tree_ps    <- tree_rg2.N
 # phy_tree(alldat.N.rfy[[2]]) <- phy_tree(tree_ps)
 
-# ---- Optional: Helotiales-only subtree (for taxon-specific analysis) --------
-helotiales <- alldat[[2]] %>% tax_select(tax_list="o__Helotiales")
-
-align_hel  <- AlignSeqs(DNAStringSet(refseq(helotiales)), anchor=NA)
-phang_hel  <- phyDat(as(align_hel, "matrix"), type="DNA")
-dm_hel     <- dist.ml(phang_hel)
-treeNJ_hel <- NJ(dm_hel)
-fit_hel    <- pml(treeNJ_hel, data=phang_hel)
-fitGTR_hel <- update(fit_hel, k=4, inv=0.2)
-fit_hel    <- optim.pml(fitGTR_hel, model="GTR", optInv=TRUE, optGamma=TRUE,
-                        optNni=FALSE, optBf=TRUE, optQ=TRUE, optEdge=TRUE,
-                        optRooted=FALSE, rearrangement="stochastic",
-                        control=pml.control(trace=0))
-tree_data_helotiales <- merge_phyloseq(helotiales, fit_hel$tree)
 
 # =============================================================================
 # SECTION 2 — iNEXT3D: TAXONOMIC DIVERSITY (q = 0, 1, 2)
@@ -83,7 +69,7 @@ inc_by_hab_TD <- lapply(split(rownames(sd), sd$habitat), function(samps){
 })
 
 out_TD <- iNEXT3D(data=inc_by_hab_TD, diversity="TD", q=c(0,1,2),
-                  datatype="incidence_raw", nboot=200)
+                  datatype="incidence_raw", nboot=500)
 
 # Relabel habitats
 labs_map  <- c(forest="Forest", subparamo="Subpáramo", paramo="Páramo")
@@ -144,7 +130,7 @@ inc_by_hab_PD <- lapply(inc_by_hab_PD, function(M) M[rownames(M) %in% tipset,, d
 inc_by_hab_PD <- inc_by_hab_PD[vapply(inc_by_hab_PD, function(M) nrow(M)>0 & ncol(M)>0, TRUE)]
 
 out_PD <- iNEXT3D(data=inc_by_hab_PD, diversity="PD", q=c(0,1,2),
-                  datatype="incidence_raw", nboot=200,
+                  datatype="incidence_raw", nboot=500,
                   PDtree=tr2, PDtype="meanPD")
 
 # =============================================================================

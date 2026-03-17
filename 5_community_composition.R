@@ -4,7 +4,7 @@
 # taxonomic composition visualisations
 #
 # Requires objects from 4_data_prep.R:
-#   alldat, alldat.N, individual_ps, balanced_ps, dists
+#   alldat, alldat.N, individual_ps, balanced_ps
 # =============================================================================
 
 library(phyloseq)
@@ -44,8 +44,9 @@ ggsave("/data/lastexpansion/danieang/Plots2/PCA_rg2N_site.png",
 # SECTION 2 — PERMANOVA + BETA-DISPERSION (balanced_ps: DOM + NV sites)
 # =============================================================================
 
-# balanced_ps and dists were created in 4_data_prep.R
+#Using balanced (NV + DOM) dataset
 sampledf <- data.frame(sample_data(balanced_ps))
+dists <- vegdist(otu_table(balanced_ps), binary=FALSE, method="robust.aitchison")
 
 # PERMANOVA: site * habitat
 adonis2(dists ~ site * habitat, by="terms", data=sampledf)
